@@ -1,0 +1,428 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum UserStatus {
+  PENDING_VERIFICATION
+  ACTIVE
+  SUSPENDED
+}
+
+enum BloodGroup {
+  A_POSITIVE
+  A_NEGATIVE
+  B_POSITIVE
+  B_NEGATIVE
+  AB_POSITIVE
+  AB_NEGATIVE
+  O_POSITIVE
+  O_NEGATIVE
+  OH_BOMBAY
+}
+
+enum UrgencyLevel {
+  LOW
+  NORMAL
+  URGENT
+  CRITICAL
+}
+
+enum BloodRequestStatus {
+  OPEN
+  MATCHING
+  PARTIALLY_FULFILLED
+  FULFILLED
+  CANCELLED
+}
+
+enum DonationStatus {
+  SCHEDULED
+  COMPLETED
+  REJECTED
+  CANCELLED
+}
+
+enum VerificationChannel {
+  EMAIL
+  PHONE
+}
+
+enum OtpPurpose {
+  EMAIL_VERIFICATION
+  PHONE_VERIFICATION
+  LOGIN_MFA
+  PASSWORD_RESET
+}
+
+enum InstitutionType {
+  BLOOD_BANK
+  HOSPITAL
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+model User {
+  id               String                 @id @default(uuid())
+  email            String                 @unique
+  phone            String                 @unique
+  fullName         String
+  passwordHash     String
+  status           UserStatus             @default(PENDING_VERIFICATION)
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  roles            UserRole[]
+  donorProfile     DonorProfile?
+  verifications    ContactVerification[]
+  otpChallenges    OtpChallenge[]
+  sessions         Session[]
+  bloodRequests    BloodRequest[]         @relation("UserBloodRequests")
+  donations        Donation[]             @relation("UserDonations")
+  eligibilityTests EligibilityAssessment[]
+  referredUsers    Referral[]             @relation("ReferrerUser")
+  referralReceived Referral?              @relation("ReferredUser")
+  notifications    Notification[]
+  auditLogs        AuditLog[]
+  adminActions     AdminAction[]
+
+  ownedCircles        TrustedCircle[]       @relation("CircleOwner")
+  circleMemberships   TrustedCircleMember[] @relation("CircleMemberUser")
+  circleEmergencies   CircleEmergency[]     @relation("UserCircleEmergencies")
+  circleAvailability  DonorAvailability?
+
+  @@index([email])
+  @@index([phone])
+  @@index([status])
+}
+
+model Role {
+  id          String     @id @default(uuid())
+  name        String     @unique
+  description String?
+  userRoles   UserRole[]
+}
+
+model UserRole {
+  id        String   @id @default(uuid())
+  userId    String
+  roleId    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@index([userId])
+  @@index([roleId])
+}
+
+model ContactVerification {
+  id          String              @id @default(uuid())
+  userId      String
+  channel     VerificationChannel
+  destination String
+  verifiedAt  DateTime?
+  isVerified  Boolean             @default(false)
+  createdAt   DateTime            @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, channel])
+  @@index([destination])
+}
+
+model OtpChallenge {
+  id          String     @id @default(uuid())
+  userId      String?
+  purpose     OtpPurpose
+  destination String
+  codeMac     String     // HMAC hash of OTP, never plaintext
+  expiresAt   DateTime
+  attempts    Int        @default(0)
+  maxAttempts Int        @default(5)
+  consumedAt  DateTime?
+  createdAt   DateTime   @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([destination, purpose])
+  @@index([expiresAt])
+}
+
+model Session {
+  id         String    @id @default(uuid())
+  userId     String
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+}
+
+model DonorProfile {
+  id                  String     @id @default(uuid())
+  userId              String     @unique
+  bloodGroup          BloodGroup
+  dateOfBirth         DateTime?
+  gender              String?
+  address             String
+  city                String
+  state               String
+  postalCode          String
+  latitude            Float?
+  longitude           Float?
+  isAvailable         Boolean    @default(true)
+  consentToContact    Boolean    @default(true)
+  lastDonationDate    DateTime?
+  totalDonationsCount Int        @default(0)
+  badgeLevel          String     @default("BRONZE")
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([bloodGroup])
+  @@index([city])
+  @@index([isAvailable])
+  @@index([latitude, longitude])
+}
+
+model BloodRequest {
+  id              String             @id @default(uuid())
+  requesterId     String
+  patientName     String
+  bloodGroup      BloodGroup
+  unitsNeeded     Int                @default(1)
+  fulfilledUnits  Int                @default(0)
+  urgency         UrgencyLevel       @default(NORMAL)
+  status          BloodRequestStatus @default(OPEN)
+  hospitalName    String
+  hospitalAddress String
+  city            String
+  latitude        Float?
+  longitude       Float?
+  contactNumber   String
+  requiredBefore  DateTime
+  notes           String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  requester User       @relation("UserBloodRequests", fields: [requesterId], references: [id], onDelete: Cascade)
+  donations Donation[]
+
+  @@index([bloodGroup])
+  @@index([urgency])
+  @@index([status])
+  @@index([city])
+}
+
+model Donation {
+  id                String         @id @default(uuid())
+  donorId           String
+  bloodRequestId    String?
+  hospitalName      String
+  donationDate      DateTime       @default(now())
+  unitsDonated      Int            @default(1)
+  bloodGroup        BloodGroup
+  status            DonationStatus @default(COMPLETED)
+  certificateNumber String         @unique
+  notes             String?
+  createdAt         DateTime       @default(now())
+
+  donor        User          @relation("UserDonations", fields: [donorId], references: [id], onDelete: Cascade)
+  bloodRequest BloodRequest? @relation(fields: [bloodRequestId], references: [id], onDelete: SetNull)
+
+  @@index([donorId])
+  @@index([certificateNumber])
+}
+
+model EligibilityAssessment {
+  id                     String    @id @default(uuid())
+  userId                 String
+  weightKg               Float
+  age                    Int
+  hemoglobin             Float?
+  lastDonationDate       DateTime?
+  hasTattooLast6Months   Boolean   @default(false)
+  hasRecentTravelSurgery Boolean   @default(false)
+  isMedicallyFit         Boolean   @default(true)
+  isEligible             Boolean
+  ineligibilityReason    String?
+  nextEligibleDate       DateTime
+  assessedAt             DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isEligible])
+}
+
+model Referral {
+  id             String   @id @default(uuid())
+  referrerUserId String
+  referralCode   String   @unique
+  referredUserId String?  @unique
+  rewardPoints   Int      @default(50)
+  createdAt      DateTime @default(now())
+
+  referrer User  @relation("ReferrerUser", fields: [referrerUserId], references: [id], onDelete: Cascade)
+  referred User? @relation("ReferredUser", fields: [referredUserId], references: [id], onDelete: SetNull)
+
+  @@index([referrerUserId])
+  @@index([referralCode])
+}
+
+model BloodBankHospital {
+  id                 String             @id @default(uuid())
+  name               String
+  type               InstitutionType    @default(BLOOD_BANK)
+  address            String
+  city               String
+  state              String
+  postalCode         String
+  latitude           Float?
+  longitude          Float?
+  phone              String
+  email              String?
+  verificationStatus VerificationStatus @default(VERIFIED)
+  operatingHours     String?            @default("24x7 Emergency Services")
+  availableInventory Json?              // JSON object with units count per blood group
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@index([city])
+  @@index([type])
+  @@index([verificationStatus])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String   // OTP, BLOOD_MATCH, REQUEST_ALERT, ELIGIBILITY, SYSTEM
+  title     String
+  body      String
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([readAt])
+}
+
+model AuditLog {
+  id           String   @id @default(uuid())
+  actorId      String?
+  action       String
+  resourceType String
+  resourceId   String?
+  details      Json?
+  ipAddress    String?
+  createdAt    DateTime @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([actorId])
+  @@index([action])
+  @@index([resourceType])
+}
+
+model AdminAction {
+  id        String   @id @default(uuid())
+  adminId   String
+  action    String
+  targetId  String
+  reason    String
+  createdAt DateTime @default(now())
+
+  admin User @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+  @@index([action])
+}
+
+enum CircleMembershipStatus {
+  INVITED
+  ACCEPTED
+  REJECTED
+  LEFT
+}
+
+model TrustedCircle {
+  id          String   @id @default(uuid())
+  ownerId     String
+  circleCode  String   @unique // e.g. BC-TC-7K9P2
+  name        String
+  status      String   @default("ACTIVE")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  owner       User                  @relation("CircleOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  members     TrustedCircleMember[]
+  emergencies CircleEmergency[]
+
+  @@index([ownerId])
+  @@index([circleCode])
+}
+
+model TrustedCircleMember {
+  id               String                 @id @default(uuid())
+  circleId         String
+  memberUserId     String
+  relationship     String?                // e.g. Family, Friend, Colleague, Neighbor
+  status           CircleMembershipStatus @default(ACCEPTED)
+  consentTimestamp DateTime               @default(now())
+  consentToContact Boolean                @default(true)
+
+  circle           TrustedCircle          @relation(fields: [circleId], references: [id], onDelete: Cascade)
+  memberUser       User                   @relation("CircleMemberUser", fields: [memberUserId], references: [id], onDelete: Cascade)
+
+  @@unique([circleId, memberUserId])
+  @@index([circleId])
+  @@index([memberUserId])
+}
+
+model CircleEmergency {
+  id           String       @id @default(uuid())
+  circleId     String
+  requesterId  String
+  patientName  String
+  bloodGroup   BloodGroup
+  unitsNeeded  Int          @default(1)
+  hospitalName String
+  status       String       @default("ALERTED") // ALERTED, RESPONDED, RESOLVED
+  dispatchedAt DateTime     @default(now())
+
+  circle       TrustedCircle @relation(fields: [circleId], references: [id], onDelete: Cascade)
+  requester    User          @relation("UserCircleEmergencies", fields: [requesterId], references: [id], onDelete: Cascade)
+
+  @@index([circleId])
+  @@index([requesterId])
+}
+
+model DonorAvailability {
+  id               String   @id @default(uuid())
+  userId           String   @unique
+  isOptedIn        Boolean  @default(true)
+  lastConfirmedAt  DateTime @default(now())
+  availabilityNote String?
+
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
