@@ -14,7 +14,11 @@ router.patch('/users/:id/status', adminController.updateUserStatus);
 router.get('/audit-logs', adminController.getAuditLogs);
 router.get('/smtp-pool', adminController.getSmtpConfig);
 router.post('/smtp-pool', adminController.updateSmtpUser);
-router.post('/target-emails', adminController.updateTargetEmails);
 router.post('/test-3-mails-otp', adminController.test3MailsOtp);
+
+// Database backup and recovery management
+router.post('/database/backup', adminController.createBackup);
+router.get('/database/backups', adminController.listBackups);
+router.post('/database/restore', adminController.restoreBackup);
 
 export default router;

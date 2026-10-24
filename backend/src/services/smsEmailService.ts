@@ -43,9 +43,11 @@ export let smtpUsers: SmtpUserConfig[] = [
     host: process.env.SMTP_HOST_1 || process.env.SMTP_HOST || 'smtp.gmail.com',
     port: parseInt(process.env.SMTP_PORT_1 || process.env.SMTP_PORT || '587', 10),
     user: process.env.SMTP_USER_1 || process.env.SMTP_USER || '',
-    pass: process.env.SMTP_PASS_1 || process.env.SMTP_PASS || '',
-    fromName: 'BloodConnect Security <auth@bloodconnect.org>',
-    status: (process.env.SMTP_USER_1 || process.env.SMTP_USER) ? 'ACTIVE' : 'NOT_CONFIGURED',
+    pass: process.env.SMTP_PASS_1 || process.env.SMTP_PASS || process.env.SMTP_PASSWORD || '',
+    fromName: process.env.SMTP_FROM_NAME && process.env.SMTP_FROM
+      ? `"${process.env.SMTP_FROM_NAME}" <${process.env.SMTP_FROM}>`
+      : (process.env.EMAIL_FROM || `"${process.env.SMTP_FROM_NAME || 'BloodConnect'}" <${process.env.SMTP_USER_1 || process.env.SMTP_USER || 'no-reply@bloodconnect.org'}>`),
+    status: (process.env.SMTP_USER_1 || process.env.SMTP_USER) && (process.env.SMTP_PASS_1 || process.env.SMTP_PASS || process.env.SMTP_PASSWORD) ? 'ACTIVE' : 'NOT_CONFIGURED',
   },
   {
     id: 'smtp-2',
@@ -55,7 +57,7 @@ export let smtpUsers: SmtpUserConfig[] = [
     user: process.env.SMTP_USER_2 || '',
     pass: process.env.SMTP_PASS_2 || '',
     fromName: 'BloodConnect Emergency Dispatch <emergency@bloodconnect.org>',
-    status: process.env.SMTP_USER_2 ? 'ACTIVE' : 'NOT_CONFIGURED',
+    status: process.env.SMTP_USER_2 && process.env.SMTP_PASS_2 ? 'ACTIVE' : 'NOT_CONFIGURED',
   },
   {
     id: 'smtp-3',
@@ -65,7 +67,7 @@ export let smtpUsers: SmtpUserConfig[] = [
     user: process.env.SMTP_USER_3 || '',
     pass: process.env.SMTP_PASS_3 || '',
     fromName: 'BloodConnect Administration <admin@bloodconnect.org>',
-    status: process.env.SMTP_USER_3 ? 'ACTIVE' : 'NOT_CONFIGURED',
+    status: process.env.SMTP_USER_3 && process.env.SMTP_PASS_3 ? 'ACTIVE' : 'NOT_CONFIGURED',
   },
 ];
 
@@ -76,10 +78,11 @@ function getOrCreateTransporter(config: SmtpUserConfig): Transporter | null {
   if (!config.user || !config.pass) return null;
   const key = `${config.id}:${config.user}:${config.host}:${config.port}`;
   if (!transporterPool.has(key)) {
+    const isSecure = process.env.SMTP_SECURE === 'true' || config.port === 465;
     const tp = nodemailer.createTransport({
       host: config.host,
       port: config.port,
-      secure: config.port === 465,
+      secure: isSecure,
       auth: { user: config.user, pass: config.pass },
     });
     transporterPool.set(key, tp);

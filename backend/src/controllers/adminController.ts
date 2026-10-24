@@ -211,5 +211,50 @@ export const adminController = {
         ...dispatchResult,
       },
     });
+  },
+
+  /**
+   * Database backup creation
+   */
+  async createBackup(req: AuthenticatedRequest, res: Response) {
+    const { createDatabaseBackup } = await import('../database/index.js');
+    const backup = createDatabaseBackup();
+    return res.status(200).json({
+      status: 'success',
+      message: 'Database backup snapshot created successfully.',
+      data: backup,
+    });
+  },
+
+  /**
+   * List available database backups
+   */
+  async listBackups(req: AuthenticatedRequest, res: Response) {
+    const { listDatabaseBackups } = await import('../database/index.js');
+    const backups = listDatabaseBackups();
+    return res.status(200).json({
+      status: 'success',
+      count: backups.length,
+      data: backups,
+    });
+  },
+
+  /**
+   * Restore database from backup
+   */
+  async restoreBackup(req: AuthenticatedRequest, res: Response) {
+    const { backupId } = req.body;
+    if (!backupId) {
+      return res.status(400).json({ status: 'error', message: 'backupId is required.' });
+    }
+    const { restoreDatabaseBackup } = await import('../database/index.js');
+    const success = restoreDatabaseBackup(backupId);
+    if (!success) {
+      return res.status(400).json({ status: 'error', message: 'Failed to restore database from backup.' });
+    }
+    return res.status(200).json({
+      status: 'success',
+      message: `Database successfully restored from ${backupId}.`,
+    });
   }
 };

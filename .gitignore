@@ -76,3 +76,10 @@ coverage/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Temporary clones, backups & build cache
+bftd-temp/
+frontend_backup/
+database_backups/
+backend/database_backups/
+*.tsbuildinfo
